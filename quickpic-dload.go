@@ -12,8 +12,9 @@ import (
 
 func main() {
 	var (
-		ulist  = flag.String("list", "cloud_gallery_urls.txt", "load URLs from the list in the file")
-		outdir = flag.String("outdir", "quickpic-backup", "save the image files to this directory (it will be created if not exists)")
+		ulist     = flag.String("list", "cloud_gallery_urls.txt", "load URLs from the list in the file")
+		outdir    = flag.String("outdir", "quickpic-backup", "save the image files to this directory (it will be created if not exists)")
+		overwrite = flag.Bool("rewrite", false, "overwrite old files with same names on each new run of the utility")
 	)
 	flag.Parse()
 	fd, err := os.Open(*ulist)
@@ -23,32 +24,48 @@ func main() {
 		os.Exit(1)
 	}
 	os.MkdirAll(*outdir, 0755)
-	var rawUrl string
+	var rawURL string
 	for {
-		_, err := fmt.Fscanln(fd, &rawUrl)
+		_, err := fmt.Fscanln(fd, &rawURL)
 		if err != nil {
 			break
 		}
-		name, resp := load(rawUrl)
-		save(path.Join(*outdir, name+".jpeg"), resp)
+		fname, need := check(rawURL, *outdir, *overwrite)
+		if !need {
+			continue
+		}
+		resp := load(rawURL)
+		save(fname, resp)
 		resp.Close()
 	}
 }
 
-func load(rawUrl string) (string, io.ReadCloser) {
-	resp, err := http.Get(rawUrl)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "can't open %s: %s\n", rawUrl, err)
-		return "", nil
-	}
+func check(rawURL string, outdir string, overwrite bool) (string, bool) {
 	var name string
-	if parsedUrl, err := url.Parse(rawUrl); err == nil {
+	if parsedUrl, err := url.Parse(rawURL); err == nil {
 		name = parsedUrl.Query()["s"][0]
 	}
 	if name == "" {
-		name = "xxx"
+		name = "xxx" // TODO fix it
 	}
-	return name, resp.Body
+	fname := path.Join(outdir, name+".jpeg")
+	if overwrite {
+		return fname, false
+	}
+	if fd, err := os.Open(fname); err == nil {
+		fd.Close()
+		return fname, true
+	}
+	return fname, false
+}
+
+func load(rawURL string) io.ReadCloser {
+	resp, err := http.Get(rawURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "can't open %s: %s\n", rawURL, err)
+		return nil
+	}
+	return resp.Body
 }
 
 func save(dname string, src io.Reader) {
