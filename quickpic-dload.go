@@ -15,6 +15,7 @@ func main() {
 		ulist     = flag.String("list", "cloud_gallery_urls.txt", "load URLs from the list in the file")
 		outdir    = flag.String("outdir", "quickpic-backup", "save the image files to this directory (it will be created if not exists)")
 		overwrite = flag.Bool("rewrite", false, "overwrite old files with same names on each new run of the utility")
+		verbose   = flag.Bool("v", false, "verbose output")
 	)
 	flag.Parse()
 	fd, err := os.Open(*ulist)
@@ -30,17 +31,17 @@ func main() {
 		if err != nil {
 			break
 		}
-		fname, need := check(rawURL, *outdir, *overwrite)
-		if !need {
+		fname, found := check(rawURL, *outdir, *overwrite, *verbose)
+		if !*overwrite && found {
 			continue
 		}
 		resp := load(rawURL)
-		save(fname, resp)
+		save(fname, resp, *verbose)
 		resp.Close()
 	}
 }
 
-func check(rawURL string, outdir string, overwrite bool) (string, bool) {
+func check(rawURL, outdir string, overwrite, verbose bool) (string, bool) {
 	var name string
 	if parsedUrl, err := url.Parse(rawURL); err == nil {
 		name = parsedUrl.Query()["s"][0]
@@ -54,6 +55,9 @@ func check(rawURL string, outdir string, overwrite bool) (string, bool) {
 	}
 	if fd, err := os.Open(fname); err == nil {
 		fd.Close()
+		if verbose {
+			fmt.Fprintf(os.Stdout, "%s already found — skip download\n", fname)
+		}
 		return fname, true
 	}
 	return fname, false
@@ -68,7 +72,7 @@ func load(rawURL string) io.ReadCloser {
 	return resp.Body
 }
 
-func save(dname string, src io.Reader) {
+func save(dname string, src io.Reader, verbose bool) {
 	fd, err := os.Create(dname)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "can't save the file into %s: %s\n", dname, err)
@@ -78,5 +82,8 @@ func save(dname string, src io.Reader) {
 	defer fd.Close()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "can't copy to %s: %s\n", dname, err)
+	}
+	if verbose {
+		fmt.Fprintf(os.Stdout, "%s saved\n", dname)
 	}
 }
